@@ -1,23 +1,30 @@
 import os
 import requests
-
-from src.utilities import ENV_Utilities
+import time
+import datetime
+from src.utilities import ENV_Utilities, JSON_Utilities
 
 class API_Handler:
     def __init__(self):
+        # ENV SECRETS
         self.env_utils = ENV_Utilities()
         self.env_variables = self.env_utils.load_env_variables()
-        self.url = self.env_variables["base_url"]
+        self.base_url = self.env_variables["base_url"]
+        self.token_url = self.env_variables["token_url"]
         self.client_id = self.env_variables["client_id"]
         self.client_secret = self.env_variables["client_secret"]
-        self.access_token = self.env_variables["access_token"]
-        self.refresh_token = self.env_variables["refresh_token"]
+
+        # JSON SECRETS
+        self.json_utils = JSON_Utilities()
+        self.json_secrets = self.json_utils.load_json_secrets()
+        self.access_token = self.json_secrets["access_token"]
+        self.refresh_token = self.json_secrets["refresh_token"]
+        self.expires_at = self.json_secrets["expires_at"]
 
     def _get(self, endpoint: str, params: dict | None = None) -> dict:
-        url = f"{self.env_variables["base_url"]}{endpoint}"
-        access_token = self.env_variables["access_token"]
+        url = f"{self.base_url}{endpoint}"
         headers = {
-            "Authorization": f"Bearer {access_token}"
+            "Authorization": f"Bearer {self.access_token}"
         }
         response = requests.get(url, headers=headers, params=params)
         if response.status_code != 200:
@@ -26,6 +33,35 @@ class API_Handler:
             )
         return response.json()
     
+class TokenManagement:
+    def __init__(self):
+        self.api_handler = API_Handler()
+
+    def _get_token(self) -> dict:
+        payload = {
+            "client_id": self.api_handler.client_id,
+            "client_secret": self.api_handler.client_secret,
+            "refresh_token": self.api_handler.refresh_token,
+            "grant_type": "refresh_token"
+        }
+        response = requests.post(self.api_handler.token_url, data=payload, timeout=30)
+        response.raise_for_status()
+        return response.json()
+    
+    def is_token_expired(self, expires_at: int | float) -> bool:
+        return time.time() >= expires_at - 30
+    
+    def replace_expired_secrets(self, expired: bool) -> None:
+        if expired:
+            json_secrets = self._get_token()
+            self.api_handler.json_utils.insert_json_secrets(json_secrets=json_secrets)
+            self.api_handler.access_token = json_secrets["access_token"]
+            self.api_handler.expires_at = json_secrets["expires_at"]
+            self.api_handler.refresh_token = json_secrets["refresh_token"]
+
+
 
 if __name__ == "__main__":
-    print(API_Handler()._get("/athlete"))
+    tm = TokenManagement()
+    expired = tm.is_token_expired(expires_at=tm.api_handler.expires_at)
+    tm.replace_expired_secrets(expired=expired)
