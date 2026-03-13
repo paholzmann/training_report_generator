@@ -21,6 +21,23 @@ class API_Handler:
         self.refresh_token = self.json_secrets["refresh_token"]
         self.expires_at = self.json_secrets["expires_at"]
 
+        self._validate_secrets()
+
+    def _validate_secrets(self) -> None:
+        required = {
+        "base_url": self.base_url,
+        "token_url": self.token_url,
+        "client_id": self.client_id,
+        "client_secret": self.client_secret,
+        "access_token": self.access_token,
+        "refresh_token": self.refresh_token,
+        "expires_at": self.expires_at,
+        }
+        missing = [key for key, value in required.items() if not value]
+        if missing:
+            raise ValueError(f"Missing secrets: {','.join(missing)}")
+
+
     def _get(self, endpoint: str, params: dict | None = None) -> dict:
         url = f"{self.base_url}{endpoint}"
         headers = {
